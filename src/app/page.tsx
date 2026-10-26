@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/lib/store";
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, registerUnauthorizedHandler } from "@/lib/api-client";
 import { LoginScreen } from "@/components/login-screen";
 import { AppSidebar } from "@/components/layout/sidebar";
 import { DashboardView } from "@/components/views/dashboard-view";
@@ -26,8 +26,37 @@ interface SessionUser {
 }
 
 export default function Home() {
-  const { user, setUser, view } = useAppStore();
+  const { user, setUser, setView, view } = useAppStore();
   const [bootChecked, setBootChecked] = useState(false);
+  // When true, login screen shows a "your session has expired" banner
+  // instead of the default greeting.
+  const [sessionExpired, setSessionExpired] = useState(false);
+  // Avoid re-entrant logout — if multiple API calls return 401 at the
+  // same time, we only want to log out once.
+  const loggingOutRef = useRef(false);
+
+  // Register a single global handler that fires whenever any API request
+  // returns 401. This causes the user state to clear and the LoginScreen
+  // to show with a "session expired" banner, instead of letting each
+  // individual view show its own "Failed to load: Unauthorized" error.
+  useEffect(() => {
+    const unregister = registerUnauthorizedHandler(() => {
+      if (loggingOutRef.current) return;
+      loggingOutRef.current = true;
+      // Clear the user state — this triggers re-render → LoginScreen shows
+      setUser(null);
+      setView("dashboard");
+      setSessionExpired(true);
+      // Also call DELETE /api/auth to clear the cookie server-side,
+      // so the next login attempt starts fresh.
+      void fetch("/api/auth", { method: "DELETE", credentials: "include" })
+        .catch(() => {})
+        .finally(() => {
+          loggingOutRef.current = false;
+        });
+    });
+    return unregister;
+  }, [setUser, setView]);
 
   // Re-hydrate session on first render
   useEffect(() => {
@@ -48,7 +77,7 @@ export default function Home() {
   }
 
   if (!user) {
-    return <LoginScreen />;
+    return <LoginScreen sessionExpired={sessionExpired} onDismissExpired={() => setSessionExpired(false)} />;
   }
 
   return (

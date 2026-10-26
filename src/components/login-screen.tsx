@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { HardHat, Loader2, ShieldAlert } from "lucide-react";
+import { HardHat, Loader2, ShieldAlert, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAppStore } from "@/lib/store";
 
-export function LoginScreen() {
+interface LoginScreenProps {
+  /** When true, show a "Your session has expired" banner above the form. */
+  sessionExpired?: boolean;
+  /** Called when the user dismisses the session-expired banner. */
+  onDismissExpired?: () => void;
+}
+
+export function LoginScreen({ sessionExpired = false, onDismissExpired }: LoginScreenProps = {}) {
   const { setUser, setView } = useAppStore();
   const [email, setEmail] = useState("admin@inspections.demo");
   const [password, setPassword] = useState("admin123");
@@ -82,6 +89,25 @@ export function LoginScreen() {
             <CardDescription>Enter your account credentials to continue</CardDescription>
           </CardHeader>
           <CardContent>
+            {sessionExpired && (
+              <Alert className="mb-4 border-amber-300 bg-amber-50">
+                <Clock className="h-4 w-4 text-amber-700" />
+                <AlertTitle className="text-amber-900">Your session has expired</AlertTitle>
+                <AlertDescription className="text-amber-900">
+                  For security, you have been signed out automatically. Please
+                  sign in again to continue.
+                  {onDismissExpired && (
+                    <button
+                      type="button"
+                      onClick={onDismissExpired}
+                      className="ml-2 text-xs underline hover:text-amber-700"
+                    >
+                      Dismiss
+                    </button>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>

@@ -191,6 +191,9 @@ export function EquipmentListView() {
     const url = clientId ? `/api/import-export/export?clientId=${clientId}` : `/api/import-export/export`;
     fetch(url, { credentials: "include" })
       .then((res) => {
+        if (res.status === 401) {
+          throw new Error("Your session has expired. Please sign in again to export.");
+        }
         if (!res.ok) throw new Error("Export failed");
         return res.blob();
       })

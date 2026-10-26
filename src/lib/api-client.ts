@@ -1,10 +1,28 @@
 // Tiny API client wrapper used by client-side components.
 // All fetches are relative to /api/... and use cookies for auth.
+//
+// On a 401 (Unauthorized) response from any API endpoint, we automatically
+// trigger a session-expired callback that the global app store registers.
+// This causes the page to drop the user back to the login screen with a
+// clear "your session has expired" message instead of showing "Failed to
+// load: Unauthorized" on every individual view the user happens to be on.
 
 export interface FetchError {
   status: number;
   message: string;
   body?: unknown;
+}
+
+// Global hook called whenever any API request returns 401.
+// Registered by src/app/page.tsx via registerUnauthorizedHandler.
+type UnauthorizedHandler = () => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function registerUnauthorizedHandler(fn: UnauthorizedHandler) {
+  unauthorizedHandler = fn;
+  return () => {
+    if (unauthorizedHandler === fn) unauthorizedHandler = null;
+  };
 }
 
 export async function apiFetch<T = unknown>(
@@ -31,6 +49,17 @@ export async function apiFetch<T = unknown>(
       res.statusText ||
       `Request failed (${res.status})`;
     const err: FetchError = { status: res.status, message, body };
+
+    // On 401 from any non-/api/auth route (so we don't loop on the login
+    // POST itself), fire the unauthorized handler so the global store
+    // clears the user state and shows the login screen.
+    if (res.status === 401 && !path.startsWith("/api/auth")) {
+      try {
+        unauthorizedHandler?.();
+      } catch {
+        // Ignore handler errors — don't mask the original 401.
+      }
+    }
     throw err;
   }
   const ct = res.headers.get("content-type") ?? "";
