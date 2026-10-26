@@ -47,7 +47,7 @@ export async function GET() {
 
   const byCategory = byCategoryAgg.map((c) => ({
     category: c.category,
-    count: c._all,
+    count: c._count._all,
   }));
 
   return NextResponse.json({

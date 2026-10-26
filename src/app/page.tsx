@@ -1,31 +1,67 @@
-'use client'
+"use client";
+
+import { useEffect, useState } from "react";
+import { useAppStore } from "@/lib/store";
+import { apiFetch } from "@/lib/api-client";
+import { LoginScreen } from "@/components/login-screen";
+import { AppSidebar } from "@/components/layout/sidebar";
+import { DashboardView } from "@/components/views/dashboard-view";
+import { EquipmentListView } from "@/components/views/equipment-list-view";
+import { EquipmentFormView } from "@/components/views/equipment-form-view";
+import { EquipmentDetailView } from "@/components/views/equipment-detail-view";
+import { ClientsView } from "@/components/views/clients-view";
+import { ImportView } from "@/components/views/import-view";
+import { InspectionsView } from "@/components/views/inspections-view";
+import { AuditLogView } from "@/components/views/audit-log-view";
+
+interface SessionUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "ADMIN" | "INSPECTOR";
+}
 
 export default function Home() {
-  return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      gap: '2rem',
-      padding: '1rem'
-    }}>
-      <div style={{
-        position: 'relative',
-        width: '6rem',
-        height: '6rem'
-      }}>
-        <img
-          src="/logo.svg"
-          alt="Z.ai Logo"
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain'
-          }}
-        />
+  const { user, setUser, view } = useAppStore();
+  const [bootChecked, setBootChecked] = useState(false);
+
+  // Re-hydrate session on first render
+  useEffect(() => {
+    apiFetch<{ user: SessionUser | null }>("/api/auth")
+      .then((r) => {
+        if (r.user) setUser(r.user);
+      })
+      .catch(() => {})
+      .finally(() => setBootChecked(true));
+  }, [setUser]);
+
+  if (!bootChecked) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-100">
+        <div className="text-zinc-500">Loading...</div>
       </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen />;
+  }
+
+  return (
+    <div className="flex h-screen w-full overflow-hidden bg-background">
+      <AppSidebar />
+      <main className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-[1400px] p-4 sm:p-6 lg:p-8">
+          {view === "dashboard" && <DashboardView />}
+          {view === "equipment" && <EquipmentListView />}
+          {view === "equipment-detail" && <EquipmentDetailView />}
+          {view === "equipment-form" && <EquipmentFormView />}
+          {view === "inspections" && <InspectionsView />}
+          {view === "clients" && <ClientsView />}
+          {view === "import" && <ImportView />}
+          {view === "audit-logs" && <AuditLogView />}
+        </div>
+      </main>
     </div>
-  )
+  );
 }

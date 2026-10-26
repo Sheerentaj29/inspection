@@ -113,26 +113,23 @@ export function EquipmentListView() {
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  // Debounce search
+  // Debounce search — only fire when q actually changes.
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQ(q), 300);
     return () => clearTimeout(t);
   }, [q]);
 
-  // Reset page when filters change
+  // Fetch clients once on mount.
   useEffect(() => {
-    setPage(1);
-  }, [debouncedQ, clientId, plantId, category, verified, pageSize]);
-
-  // Fetch clients once
-  useEffect(() => {
-    apiFetch<{ items: ClientItem[] }>("/api/clients")
+    void apiFetch<{ items: ClientItem[] }>("/api/clients")
       .then((r) => setClients(r.items))
       .catch(() => toast.error("Failed to load clients"));
   }, []);
 
-  // Fetch equipment list
-  const fetchList = useCallback(() => {
+  // Fetch equipment list whenever filters/pagination/sort or refresh token change.
+  useEffect(() => {
+    let mounted = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError(null);
     const params = new URLSearchParams({
@@ -146,26 +143,29 @@ export function EquipmentListView() {
     if (plantId) params.set("plantId", plantId);
     if (category) params.set("category", category);
     if (verified) params.set("verified", verified);
-    apiFetch<EquipmentResponse>(`/api/equipment?${params.toString()}`)
-      .then((r) => setData(r))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [debouncedQ, page, pageSize, sort, order, clientId, plantId, category, verified]);
-
-  useEffect(() => {
-    fetchList();
-  }, [fetchList, refreshKey]);
+    void apiFetch<EquipmentResponse>(`/api/equipment?${params.toString()}`)
+      .then((r) => {
+        if (!mounted) return;
+        setData(r);
+      })
+      .catch((e) => {
+        if (!mounted) return;
+        setError(e.message);
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [debouncedQ, page, pageSize, sort, order, clientId, plantId, category, verified, refreshKey]);
 
   // Plants filtered by selected client
   const plantsForClient = useMemo(() => {
     if (!clientId) return [];
     return clients.find((c) => c.id === clientId)?.plants ?? [];
   }, [clients, clientId]);
-
-  // Reset plant when client changes
-  useEffect(() => {
-    setPlantId("");
-  }, [clientId]);
 
   function toggleSort(field: string) {
     if (sort === field) {
@@ -174,6 +174,16 @@ export function EquipmentListView() {
       setSort(field);
       setOrder("asc");
     }
+    // Reset pagination when sort changes so user sees the new ordering.
+    setPage(1);
+  }
+
+  // Helper: reset to page 1 when a filter changes.
+  function withPageReset<T>(setter: (v: T) => void) {
+    return (v: T) => {
+      setter(v);
+      setPage(1);
+    };
   }
 
   function exportCsv() {
@@ -240,7 +250,10 @@ export function EquipmentListView() {
             </div>
             <div>
               <Label className="text-xs">Client</Label>
-              <Select value={clientId || "ALL"} onValueChange={(v) => setClientId(v === "ALL" ? "" : v)}>
+              <Select value={clientId || "ALL"} onValueChange={withPageReset((v) => {
+                setClientId(v === "ALL" ? "" : v);
+                setPlantId("");
+              })}>
                 <SelectTrigger><SelectValue placeholder="All clients" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All clients</SelectItem>
@@ -252,7 +265,7 @@ export function EquipmentListView() {
             </div>
             <div>
               <Label className="text-xs">Plant</Label>
-              <Select value={plantId || "ALL"} onValueChange={(v) => setPlantId(v === "ALL" ? "" : v)}>
+              <Select value={plantId || "ALL"} onValueChange={withPageReset((v) => setPlantId(v === "ALL" ? "" : v))}>
                 <SelectTrigger><SelectValue placeholder="All plants" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All plants</SelectItem>
@@ -264,7 +277,7 @@ export function EquipmentListView() {
             </div>
             <div>
               <Label className="text-xs">Verification</Label>
-              <Select value={verified || "ALL"} onValueChange={(v) => setVerified(v === "ALL" ? "" : v)}>
+              <Select value={verified || "ALL"} onValueChange={withPageReset((v) => setVerified(v === "ALL" ? "" : v))}>
                 <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All</SelectItem>
@@ -277,7 +290,7 @@ export function EquipmentListView() {
           <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-8">
             <div className="lg:col-span-2">
               <Label className="text-xs">Category</Label>
-              <Select value={category || "ALL"} onValueChange={(v) => setCategory(v === "ALL" ? "" : v)}>
+              <Select value={category || "ALL"} onValueChange={withPageReset((v) => setCategory(v === "ALL" ? "" : v))}>
                 <SelectTrigger><SelectValue placeholder="All categories" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All categories</SelectItem>
@@ -289,7 +302,7 @@ export function EquipmentListView() {
             </div>
             <div className="lg:col-span-2">
               <Label className="text-xs">Sort by</Label>
-              <Select value={sort} onValueChange={(v) => setSort(v)}>
+              <Select value={sort} onValueChange={(v) => { setSort(v); setPage(1); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {SORT_FIELDS.map((f) => (

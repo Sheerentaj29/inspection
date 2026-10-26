@@ -168,9 +168,11 @@ export function EquipmentFormView() {
       setLoading(false);
       return;
     }
+    let mounted = true;
     setLoading(true);
-    apiFetch<EquipmentResponse>(`/api/equipment/${editingEquipmentId}`)
+    void apiFetch<EquipmentResponse>(`/api/equipment/${editingEquipmentId}`)
       .then((e) => {
+        if (!mounted) return;
         setForm({
           equipmentId: e.equipmentId,
           name: e.name,
@@ -198,8 +200,17 @@ export function EquipmentFormView() {
           notes: e.notes ?? "",
         });
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!mounted) return;
+        setError(e.message);
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
   }, [editingEquipmentId]);
 
   // Selected category definition

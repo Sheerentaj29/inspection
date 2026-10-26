@@ -648,7 +648,7 @@ export function EquipmentDetailView() {
                     Cancel
                   </Button>
                   <Button onClick={submitInspection} disabled={savingInsp}>
-                    {savingIns ? (
+                    {savingInsp ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving...
                       </>

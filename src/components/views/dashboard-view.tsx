@@ -49,11 +49,23 @@ export function DashboardView() {
 
   useEffect(() => {
     let mounted = true;
+    // Initial-load data fetch. setLoading(true) here is the standard
+    // "synchronize with external system" pattern — disable the strict rule.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    apiFetch<DashboardStats>("/api/dashboard")
-      .then((s) => mounted && setStats(s))
-      .catch((e) => mounted && setError(e.message))
-      .finally(() => mounted && setLoading(false));
+    void apiFetch<DashboardStats>("/api/dashboard")
+      .then((s) => {
+        if (!mounted) return;
+        setStats(s);
+      })
+      .catch((e) => {
+        if (!mounted) return;
+        setError(e.message);
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setLoading(false);
+      });
     return () => {
       mounted = false;
     };
