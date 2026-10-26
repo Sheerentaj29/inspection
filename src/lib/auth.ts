@@ -7,6 +7,12 @@
 //
 // Storing just the id keeps the cookie value tiny (a single cuid string,
 // ~25 chars) and avoids any browser/proxy issues with JSON special chars.
+//
+// IMPORTANT: cookie name is `ira_session_v2`. The previous build used
+// `ems_session` with a URL-encoded JSON value — some browsers retain that
+// stale cookie and it interferes with the new clean user-id value. Renaming
+// the cookie sidesteps the conflict: the old `ems_session` cookie is simply
+// ignored by the new code (and gets cleared on the next successful login).
 
 import { cookies } from "next/headers";
 import { db } from "@/lib/db";
@@ -22,7 +28,12 @@ export interface SessionUser {
   role: UserRole;
 }
 
-const SESSION_COOKIE = "ems_session";
+// Cookie name bumped to v2 so it never collides with stale cookies from
+// older builds of this app (which used a different name + value format).
+const SESSION_COOKIE = "ira_session_v2";
+// Legacy cookie name from previous build — cleared on next login so it
+// doesn't keep being sent and confusing the server.
+const LEGACY_COOKIE = "ems_session";
 const COOKIE_MAX_AGE = 60 * 60 * 8; // 8 hours
 
 export async function getSession(): Promise<SessionUser | null> {
@@ -33,6 +44,9 @@ export async function getSession(): Promise<SessionUser | null> {
   // Those values start with "%7B" (URL-encoded "{") or "{" — never accept
   // them as a user id, otherwise the DB lookup fails and we return null.
   if (raw.startsWith("%7B") || raw.startsWith("{")) return null;
+  // CUIDs are 24+ chars, alphanumeric. Reject anything that doesn't look
+  // like a valid cuid to avoid hitting the DB with junk.
+  if (!/^[a-z0-9]{20,30}$/i.test(raw)) return null;
   try {
     const user = await db.user.findUnique({
       where: { id: raw },
@@ -74,39 +88,34 @@ export async function requireAdmin(): Promise<SessionUser> {
 
 type CookieStore = Awaited<ReturnType<typeof cookies>>;
 
-/**
- * Detect whether the incoming request is HTTPS (either direct TLS or via
- * a proxy that set X-Forwarded-Proto). The Secure cookie flag must be set
- * for browsers to accept the cookie on HTTPS preview URLs; without it,
- * Chrome/Safari silently reject the cookie and the session never persists.
- */
-function isHttpsRequest(req?: NextRequest): boolean {
-  if (!req) return false;
-  // Next.js URL protocol (works for direct HTTPS or HTTPS-prefixed proxy)
-  if (req.nextUrl?.protocol === "https:") return true;
-  // Caddy / Nginx / load balancer forward the original protocol here
-  const fwdProto = req.headers.get("x-forwarded-proto");
-  if (fwdProto === "https") return true;
-  return false;
-}
-
-export function setSessionCookie(
-  cookieStore: CookieStore,
-  userId: string,
-  req?: NextRequest,
-) {
+export function setSessionCookie(cookieStore: CookieStore, userId: string) {
+  // Set the new clean cookie with just the user id. No Secure flag —
+  // SameSite=Lax is accepted by browsers on both HTTP (localhost) and
+  // HTTPS (preview URL) without needing Secure. Adding Secure would
+  // cause the cookie to be rejected on HTTP.
   cookieStore.set(SESSION_COOKIE, userId, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
     maxAge: COOKIE_MAX_AGE,
-    // Set Secure when the request is HTTPS so browsers accept the cookie
-    // on HTTPS preview URLs. On http://localhost, leave it unset so the
-    // browser accepts it on plain HTTP too.
-    secure: isHttpsRequest(req),
   });
+  // Also clear any stale legacy cookie so it stops being sent. This is
+  // important: if the user's browser has both `ira_session_v2` (new) and
+  // `ems_session` (old URL-encoded JSON) cookies, both are sent on each
+  // request but the server only reads `ira_session_v2` — so the legacy
+  // cookie just adds request bloat. Clearing it keeps things clean.
+  try {
+    cookieStore.delete(LEGACY_COOKIE);
+  } catch {
+    // ignore — best-effort cleanup
+  }
 }
 
 export function clearSessionCookie(cookieStore: CookieStore) {
   cookieStore.delete(SESSION_COOKIE);
+  try {
+    cookieStore.delete(LEGACY_COOKIE);
+  } catch {
+    // ignore
+  }
 }
