@@ -11,6 +11,7 @@
 import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import type { User } from "@prisma/client";
+import type { NextRequest } from "next/server";
 
 export type UserRole = "ADMIN" | "INSPECTOR" | "APPROVER";
 
@@ -28,7 +29,10 @@ export async function getSession(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
   const raw = cookieStore.get(SESSION_COOKIE)?.value;
   if (!raw || raw.length === 0) return null;
-  // Cookie value is just the user id (a cuid). Verify it actually exists in DB.
+  // Reject obviously-stale cookies from older builds (URL-encoded JSON).
+  // Those values start with "%7B" (URL-encoded "{") or "{" — never accept
+  // them as a user id, otherwise the DB lookup fails and we return null.
+  if (raw.startsWith("%7B") || raw.startsWith("{")) return null;
   try {
     const user = await db.user.findUnique({
       where: { id: raw },
@@ -70,16 +74,36 @@ export async function requireAdmin(): Promise<SessionUser> {
 
 type CookieStore = Awaited<ReturnType<typeof cookies>>;
 
-export function setSessionCookie(cookieStore: CookieStore, userId: string) {
-  // Just store the user id — no JSON, no special chars, smallest possible value.
+/**
+ * Detect whether the incoming request is HTTPS (either direct TLS or via
+ * a proxy that set X-Forwarded-Proto). The Secure cookie flag must be set
+ * for browsers to accept the cookie on HTTPS preview URLs; without it,
+ * Chrome/Safari silently reject the cookie and the session never persists.
+ */
+function isHttpsRequest(req?: NextRequest): boolean {
+  if (!req) return false;
+  // Next.js URL protocol (works for direct HTTPS or HTTPS-prefixed proxy)
+  if (req.nextUrl?.protocol === "https:") return true;
+  // Caddy / Nginx / load balancer forward the original protocol here
+  const fwdProto = req.headers.get("x-forwarded-proto");
+  if (fwdProto === "https") return true;
+  return false;
+}
+
+export function setSessionCookie(
+  cookieStore: CookieStore,
+  userId: string,
+  req?: NextRequest,
+) {
   cookieStore.set(SESSION_COOKIE, userId, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
     maxAge: COOKIE_MAX_AGE,
-    // Don't set Secure explicitly — Next.js will set it automatically when
-    // the request is HTTPS. Setting it on HTTP would prevent the cookie
-    // from being stored when accessing via http://localhost.
+    // Set Secure when the request is HTTPS so browsers accept the cookie
+    // on HTTPS preview URLs. On http://localhost, leave it unset so the
+    // browser accepts it on plain HTTP too.
+    secure: isHttpsRequest(req),
   });
 }
 

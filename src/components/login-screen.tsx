@@ -33,22 +33,13 @@ export function LoginScreen() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error ?? "Login failed");
       }
-      // Verify the session cookie was actually set by the browser by issuing
-      // a follow-up GET /api/auth. If the cookie wasn't accepted, this will
-      // return { user: null } and we show a clear error instead of letting
-      // the user think login succeeded but then see "Failed to load" on the
-      // next page.
-      const verify = await fetch("/api/auth", {
-        method: "GET",
-        credentials: "include",
-      });
-      const verifyBody = await verify.json().catch(() => ({}));
-      if (!verifyBody?.user) {
-        throw new Error(
-          "Login succeeded on the server but the session cookie was not accepted by your browser. Please enable cookies for this site and try again.",
-        );
-      }
-      setUser(verifyBody.user);
+      const user = await res.json();
+      // Trust the POST response. The server has already validated the
+      // password and set the session cookie. We transition to the
+      // dashboard immediately; if the cookie isn't accepted by the
+      // browser for some reason, the next page will show a "Failed to
+      // load" message rather than blocking at the login screen.
+      setUser(user);
       setView("dashboard");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Login failed");

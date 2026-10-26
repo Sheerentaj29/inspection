@@ -30,8 +30,11 @@ export async function POST(req: NextRequest) {
   // Set the session cookie BEFORE recording the audit log and BEFORE
   // constructing the response. The cookie must be queued on the outgoing
   // response before NextResponse.json() is returned.
+  // Pass `req` so the helper can detect HTTPS (X-Forwarded-Proto) and
+  // set the Secure flag — without it, browsers reject the cookie on the
+  // HTTPS preview URL and the session never persists.
   const cookieStore = await cookies();
-  setSessionCookie(cookieStore, user.id);
+  setSessionCookie(cookieStore, user.id, req);
 
   await recordAudit({
     userId: user.id,
