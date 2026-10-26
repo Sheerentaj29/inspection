@@ -8,6 +8,7 @@ import { createHash } from "crypto";
 import { db } from "@/lib/db";
 import { setSessionCookie, clearSessionCookie, getSession } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
+import type { UserRole } from "@/lib/auth";
 
 function hashPassword(pw: string) {
   return createHash("sha256").update(pw).digest("hex");
@@ -18,20 +19,20 @@ export async function POST(req: NextRequest) {
   if (!body || !body.email || !body.password) {
     return NextResponse.json({ error: "Missing email or password" }, { status: 400 });
   }
-  const user = await db.user.findUnique({ where: { email: body.email.toLowerCase() } });
-  if (!user || user.passwordHash !== hashPassword(body.password)) {
+  const user = await db.user.findUnique({ where: { email: String(body.email).toLowerCase() } });
+  if (!user || user.passwordHash !== hashPassword(String(body.password))) {
     return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
   }
   if (!user.active) {
     return NextResponse.json({ error: "Account disabled" }, { status: 403 });
   }
+
+  // Set the session cookie BEFORE recording the audit log and BEFORE
+  // constructing the response. The cookie must be queued on the outgoing
+  // response before NextResponse.json() is returned.
   const cookieStore = await cookies();
-  await setSessionCookie(cookieStore, {
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role as "ADMIN" | "INSPECTOR",
-  });
+  setSessionCookie(cookieStore, user.id);
+
   await recordAudit({
     userId: user.id,
     userName: user.name,
@@ -40,11 +41,12 @@ export async function POST(req: NextRequest) {
     entityId: user.id,
     details: `User ${user.email} logged in`,
   });
+
   return NextResponse.json({
     id: user.id,
     email: user.email,
     name: user.name,
-    role: user.role,
+    role: user.role as UserRole,
   });
 }
 

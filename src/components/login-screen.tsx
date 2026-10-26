@@ -21,17 +21,34 @@ export function LoginScreen() {
     setLoading(true);
     setError(null);
     try {
+      // credentials:"include" is required so the Set-Cookie response header
+      // is honoured by the browser for subsequent same-origin requests.
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email, password }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.error ?? "Login failed");
       }
-      const user = await res.json();
-      setUser(user);
+      // Verify the session cookie was actually set by the browser by issuing
+      // a follow-up GET /api/auth. If the cookie wasn't accepted, this will
+      // return { user: null } and we show a clear error instead of letting
+      // the user think login succeeded but then see "Failed to load" on the
+      // next page.
+      const verify = await fetch("/api/auth", {
+        method: "GET",
+        credentials: "include",
+      });
+      const verifyBody = await verify.json().catch(() => ({}));
+      if (!verifyBody?.user) {
+        throw new Error(
+          "Login succeeded on the server but the session cookie was not accepted by your browser. Please enable cookies for this site and try again.",
+        );
+      }
+      setUser(verifyBody.user);
       setView("dashboard");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Login failed");
