@@ -10,17 +10,21 @@ import {
   ShieldCheck,
   LogOut,
   HardHat,
+  Gauge,
+  Ruler,
 } from "lucide-react";
 import { useAppStore, type ViewKey } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-const NAV: Array<{ key: ViewKey; label: string; icon: React.ElementType; adminOnly?: boolean }> = [
+const NAV: Array<{ key: ViewKey; label: string; icon: React.ElementType; adminOnly?: boolean; roles?: string[] }> = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "equipment", label: "Equipment Master", icon: Database },
+  { key: "pipeline-reports", label: "Pipeline Reports", icon: Gauge, roles: ["ADMIN", "INSPECTOR", "APPROVER"] },
   { key: "inspections", label: "Inspections", icon: FileText },
   { key: "clients", label: "Clients & Plants", icon: Building2, adminOnly: true },
+  { key: "pipe-standards", label: "Pipe Standards", icon: Ruler, adminOnly: true },
   { key: "import", label: "CSV Import / Export", icon: Upload, adminOnly: true },
   { key: "audit-logs", label: "Audit Log", icon: ScrollText, adminOnly: true },
 ];
@@ -28,7 +32,11 @@ const NAV: Array<{ key: ViewKey; label: string; icon: React.ElementType; adminOn
 export function AppSidebar() {
   const { view, setView, user, setUser } = useAppStore();
   if (!user) return null;
-  const visibleNav = NAV.filter((n) => !n.adminOnly || user.role === "ADMIN");
+  const visibleNav = NAV.filter((n) => {
+    if (n.adminOnly) return user.role === "ADMIN";
+    if (n.roles && !n.roles.includes(user.role)) return false;
+    return true;
+  });
 
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
@@ -88,7 +96,7 @@ export function AppSidebar() {
                 variant="outline"
                 className="h-5 px-1.5 text-[10px] uppercase border-sidebar-primary/50 text-sidebar-primary"
               >
-                {user.role === "ADMIN" ? "Administrator" : "Inspector"}
+                {user.role === "ADMIN" ? "Administrator" : user.role === "APPROVER" ? "Approver" : "Inspector"}
               </Badge>
             </div>
           </div>

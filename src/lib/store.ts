@@ -12,7 +12,11 @@ export type ViewKey =
   | "inspections"
   | "clients"
   | "import"
-  | "audit-logs";
+  | "audit-logs"
+  | "pipeline-reports"
+  | "pipeline-report-form"
+  | "pipeline-report-detail"
+  | "pipe-standards";
 
 interface AppState {
   view: ViewKey;
@@ -22,14 +26,21 @@ interface AppState {
   editingEquipmentId: string | null;
   // For inspection entry, pre-selected client (filter)
   inspectionClientId: string | null;
+  // For pipeline-report-detail: the report ID to show
+  selectedPipelineReportId: string | null;
+  // For pipeline-report-form: null = create mode; ID = edit mode
+  editingPipelineReportId: string | null;
   // Bump this counter to force re-fetches after mutations
   refreshKey: number;
   // Session
-  user: { id: string; email: string; name: string; role: "ADMIN" | "INSPECTOR" } | null;
+  user: { id: string; email: string; name: string; role: "ADMIN" | "INSPECTOR" | "APPROVER" } | null;
   setView: (v: ViewKey) => void;
   openEquipment: (id: string) => void;
   openNewEquipment: () => void;
   openEditEquipment: (id: string) => void;
+  openPipelineReport: (id: string) => void;
+  openNewPipelineReport: () => void;
+  openEditPipelineReport: (id: string) => void;
   setUser: (u: AppState["user"]) => void;
   refresh: () => void;
 }
@@ -39,6 +50,8 @@ export const useAppStore = create<AppState>((set) => ({
   selectedEquipmentId: null,
   editingEquipmentId: null,
   inspectionClientId: null,
+  selectedPipelineReportId: null,
+  editingPipelineReportId: null,
   refreshKey: 0,
   user: null,
   setView: (v) => set({ view: v }),
@@ -47,6 +60,12 @@ export const useAppStore = create<AppState>((set) => ({
     set({ view: "equipment-form", editingEquipmentId: null }),
   openEditEquipment: (id) =>
     set({ view: "equipment-form", editingEquipmentId: id }),
+  openPipelineReport: (id) =>
+    set({ view: "pipeline-report-detail", selectedPipelineReportId: id }),
+  openNewPipelineReport: () =>
+    set({ view: "pipeline-report-form", editingPipelineReportId: null }),
+  openEditPipelineReport: (id) =>
+    set({ view: "pipeline-report-form", editingPipelineReportId: id }),
   setUser: (u) => set({ user: u }),
   refresh: () => set((s) => ({ refreshKey: s.refreshKey + 1 })),
 }));

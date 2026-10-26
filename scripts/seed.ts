@@ -43,6 +43,17 @@ async function main() {
     },
   });
 
+  const approver = await db.user.upsert({
+    where: { email: "approver@inspections.demo" },
+    update: {},
+    create: {
+      email: "approver@inspections.demo",
+      name: "Anita Approver",
+      passwordHash: hashPassword("approver123"),
+      role: "APPROVER",
+    },
+  });
+
   // -------- CLIENTS --------
   const client1 = await db.client.upsert({
     where: { name: "AcidChem Industries Pvt Ltd (DEMO)" },

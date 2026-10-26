@@ -40,13 +40,16 @@ export function LoginScreen() {
     }
   }
 
-  function fill(role: "ADMIN" | "INSPECTOR") {
+  function fill(role: "ADMIN" | "INSPECTOR" | "APPROVER") {
     if (role === "ADMIN") {
       setEmail("admin@inspections.demo");
       setPassword("admin123");
-    } else {
+    } else if (role === "INSPECTOR") {
       setEmail("inspector@inspections.demo");
       setPassword("inspector123");
+    } else {
+      setEmail("approver@inspections.demo");
+      setPassword("approver123");
     }
   }
 
@@ -127,6 +130,13 @@ export function LoginScreen() {
                 className="block w-full text-left hover:text-amber-700"
               >
                 <span className="font-mono">inspector@inspections.demo</span> / inspector123 (Inspector)
+              </button>
+              <button
+                type="button"
+                onClick={() => fill("APPROVER")}
+                className="block w-full text-left hover:text-amber-700"
+              >
+                <span className="font-mono">approver@inspections.demo</span> / approver123 (Report Approver)
               </button>
             </div>
           </CardContent>

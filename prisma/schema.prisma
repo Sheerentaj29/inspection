@@ -19,14 +19,17 @@ model User {
   email        String   @unique
   name         String
   passwordHash String
-  role         String   @default("INSPECTOR") // ADMIN | INSPECTOR
+  role         String   @default("INSPECTOR") // ADMIN | INSPECTOR | APPROVER
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  equipment   Equipment[]   @relation("EquipmentCreatedBy")
-  inspections Inspection[]
-  auditLogs   AuditLog[]
+  equipment           Equipment[]           @relation("EquipmentCreatedBy")
+  inspections         Inspection[]
+  auditLogs           AuditLog[]
+  pipelineInspections PipelineInspection[]  @relation("PipelineInspectionInspector")
+  approvedReports     PipelineInspection[]  @relation("PipelineInspectionApprover")
+  pipeStandardEdits   PipeStandard[]        @relation("PipeStandardVerifiedBy")
 }
 
 // =====================================================
@@ -41,13 +44,15 @@ model Client {
   contactEmail String?
   contactPhone String?
   address      String?
+  logoPath     String?
   notes        String?
   isDemo       Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  plants    Plant[]
-  equipment Equipment[]
+  plants               Plant[]
+  equipment            Equipment[]
+  pipelineInspections  PipelineInspection[]
 }
 
 model Plant {
@@ -63,6 +68,7 @@ model Plant {
 
   client    Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
   equipment Equipment[]
+  pipelineInspections PipelineInspection[]
 }
 
 // =====================================================
@@ -155,8 +161,8 @@ model AuditLog {
   id        String   @id @default(cuid())
   userId    String?
   userName  String?
-  action    String   // CREATE | UPDATE | DELETE | LOGIN | EXPORT | IMPORT
-  entity    String   // Equipment | Client | Plant | Inspection | User
+  action    String   // CREATE | UPDATE | DELETE | LOGIN | EXPORT | IMPORT | APPROVE | OVERRIDE
+  entity    String   // Equipment | Client | Plant | Inspection | User | PipelineInspection | PipeStandard | ComponentType
   entityId  String?
   details   String?
   createdAt DateTime @default(now())
@@ -165,4 +171,195 @@ model AuditLog {
 
   @@index([entity])
   @@index([userId])
+}
+
+// =====================================================
+// PIPE STANDARD REFERENCE DATA (ASME B36.10M / B36.19M)
+// =====================================================
+// Wall thickness values seeded from the publicly published ASME
+// reference tables for the most commonly used nominal pipe sizes and
+// schedules. These values MUST be re-verified against the licensed /
+// official ASME standard edition by an authorized administrator before
+// production use. An admin can edit, add, or delete entries, and every
+// edit is recorded with verifiedBy + verifiedAt + audit log entry.
+
+model PipeStandard {
+  id              String   @id @default(cuid())
+  standard        String   // "ASME B36.10M" | "ASME B36.19M"
+  edition         String   // e.g. "2018"
+  nominalSizeInch String   // e.g. "2" or "1/2"
+  nominalSizeMm   Float   // e.g. 60.3
+  dn              String   // e.g. "DN50"
+  schedule        String   // e.g. "SCH 40", "STD", "XS", "XXS", "SCH 40S"
+  wallThicknessMm Float   // nominal wall thickness in mm
+  oD_mm           Float?   // outside diameter (mm) when applicable
+  isVerified      Boolean  @default(false)
+  verifiedById    String?
+  verifiedAt      DateTime?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  verifiedBy      User?    @relation("PipeStandardVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  measurements    ThicknessMeasurement[]
+
+  @@unique([standard, edition, nominalSizeInch, schedule])
+  @@index([standard, nominalSizeInch])
+}
+
+// =====================================================
+// COMPONENT TYPES (editable dropdown)
+// =====================================================
+// PIPE, ELBOW, TEE, REDUCER, FLANGE, OTHER. Admin-extensible.
+
+model ComponentType {
+  id        String   @id @default(cuid())
+  code      String   @unique // PIPE, ELBOW, TEE, REDUCER, FLANGE, OTHER
+  label     String   // display label
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  thicknessMeasurements ThicknessMeasurement[]
+}
+
+// =====================================================
+// PIPELINE INSPECTION REPORT
+// =====================================================
+// A single UT thickness measurement report on a pipeline section.
+// Header captures client/plant/pipeline identity; rows are individual
+// measurement points (ThicknessMeasurement).
+
+model PipelineInspection {
+  id                       String   @id @default(cuid())
+  reportNumber             String   // human-readable report number, e.g. "UT-COR-ENN-001"
+  clientId                 String
+  plantId                  String
+  inspectionArea           String?  // free text / searchable
+  pipelineDescription      String?  // free text / searchable
+  pipelineIdentificationNumber String? // free text / searchable
+  isometricDrawingNumber   String? // free text / searchable
+  materialOfConstruction   String? // e.g. Carbon Steel, SS316
+  applicableStandard       String? // e.g. "ASME B36.10M"
+  standardEdition          String? // e.g. "2018"
+
+  inspectionDate           DateTime @default(now())
+  status                   String   @default("Draft") // Draft | Submitted | Approved | Rejected | Superseded
+  revisionNumber           Int      @default(1)
+
+  inspectorId              String
+  inspectorName            String   // snapshot at approval time
+  findingsSummary          String?  // overall findings section
+  comments                 String?  // general comments
+
+  // Override tracking (admin-approved nominal thickness override)
+  overrideReason           String?
+  overrideAppliedById      String?
+  overrideAppliedAt        DateTime?
+
+  // Approval tracking
+  approvedById             String?
+  approvedAt               DateTime?
+  approvalNotes            String?
+
+  // PDF artifact (generated PDF path)
+  pdfPath                  String?
+  signedPdfPath            String?
+
+  isDemo                   Boolean  @default(false)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  client      Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  plant       Plant       @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  inspector   User        @relation("PipelineInspectionInspector", fields: [inspectorId], references: [id])
+  approver    User?       @relation("PipelineInspectionApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  measurements ThicknessMeasurement[]
+  revisions   ReportRevision[]
+
+  @@unique([clientId, reportNumber])
+  @@index([clientId])
+  @@index([plantId])
+  @@index([inspectorId])
+}
+
+// =====================================================
+// THICKNESS MEASUREMENT ROW
+// =====================================================
+// One row per measurement point. The first two columns (Dia mm (inch),
+// Pipe Schedule) are stored as structured values; the third column
+// (Nominal Thickness) is calculated from PipeStandard and may be
+// overridden only with a recorded reason. The four clock-position
+// measurements support an explicit status (Measured | NotMeasured |
+// NotApplicable) so missing data is never converted to zero.
+
+model ThicknessMeasurement {
+  id                    String   @id @default(cuid())
+  pipelineInspectionId String
+  pointNo               String   // free text, e.g. "P-1"
+  sortOrder             Int      @default(0)
+
+  // First two fixed columns
+  pipeSizeInch          String   // e.g. "2", "1/2", "6" (matches PipeStandard.nominalSizeInch)
+  pipeSchedule          String   // e.g. "SCH 40", "STD"
+
+  // Third column (calculated from standards; override captured separately)
+  nominalThicknessMm    Float?   // snapshot from PipeStandard at row creation/update
+  nominalOverride       Float?   // authorized override value (with reason at report level)
+  standardId            String?  // FK to PipeStandard used to compute nominalThicknessMm
+
+  // Fourth column
+  componentTypeId        String?
+  componentTypeCode      String   // snapshot code (PIPE | ELBOW | TEE | REDUCER | FLANGE | OTHER)
+
+  // Columns 5-9: clock-position measurements with explicit status
+  northMm               Float?
+  northStatus            String   @default("NotMeasured") // Measured | NotMeasured | NotApplicable
+  eastMm                 Float?
+  eastStatus             String   @default("NotMeasured")
+  southMm               Float?
+  southStatus            String   @default("NotMeasured")
+  westMm                 Float?
+  westStatus             String   @default("NotMeasured")
+
+  // Column 10: observed minimum (calculated; null if no valid measurements)
+  observedMinimumMm     Float?
+  observedMinimumOverride Float? // authorized override with reason
+
+  // Column 11: findings / comments
+  findingsComments      String?
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  pipelineInspection    PipelineInspection @relation(fields: [pipelineInspectionId], references: [id], onDelete: Cascade)
+  componentType         ComponentType?     @relation(fields: [componentTypeId], references: [id], onDelete: SetNull)
+  standard              PipeStandard?      @relation(fields: [standardId], references: [id], onDelete: SetNull)
+
+  @@index([pipelineInspectionId])
+  @@index([pipeSizeInch, pipeSchedule])
+}
+
+// =====================================================
+// REPORT REVISION HISTORY
+// =====================================================
+// Every save of an Approved report creates a new revision snapshot.
+// Earlier revisions remain accessible for audit / retrieval.
+
+model ReportRevision {
+  id                String   @id @default(cuid())
+  pipelineInspectionId String
+  revisionNumber    Int
+  revisionDate      DateTime @default(now())
+  revisedById       String?
+  revisedByName    String?
+  changeDescription String?
+  pdfPath           String?
+  snapshotData      String?  // JSON snapshot of the report at this revision
+  createdAt         DateTime @default(now())
+
+  pipelineInspection PipelineInspection @relation(fields: [pipelineInspectionId], references: [id], onDelete: Cascade)
+
+  @@index([pipelineInspectionId])
 }

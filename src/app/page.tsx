@@ -13,12 +13,16 @@ import { ClientsView } from "@/components/views/clients-view";
 import { ImportView } from "@/components/views/import-view";
 import { InspectionsView } from "@/components/views/inspections-view";
 import { AuditLogView } from "@/components/views/audit-log-view";
+import { PipelineReportsListView } from "@/components/views/pipeline-reports-list-view";
+import { PipelineReportFormView } from "@/components/views/pipeline-report-form-view";
+import { PipelineReportDetailView } from "@/components/views/pipeline-report-detail-view";
+import { PipeStandardsView } from "@/components/views/pipe-standards-view";
 
 interface SessionUser {
   id: string;
   email: string;
   name: string;
-  role: "ADMIN" | "INSPECTOR";
+  role: "ADMIN" | "INSPECTOR" | "APPROVER";
 }
 
 export default function Home() {
@@ -51,7 +55,7 @@ export default function Home() {
     <div className="flex h-screen w-full overflow-hidden bg-background">
       <AppSidebar />
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[1400px] p-4 sm:p-6 lg:p-8">
+        <div className="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">
           {view === "dashboard" && <DashboardView />}
           {view === "equipment" && <EquipmentListView />}
           {view === "equipment-detail" && <EquipmentDetailView />}
@@ -60,6 +64,10 @@ export default function Home() {
           {view === "clients" && <ClientsView />}
           {view === "import" && <ImportView />}
           {view === "audit-logs" && <AuditLogView />}
+          {view === "pipeline-reports" && <PipelineReportsListView />}
+          {view === "pipeline-report-form" && <PipelineReportFormView />}
+          {view === "pipeline-report-detail" && <PipelineReportDetailView />}
+          {view === "pipe-standards" && <PipeStandardsView />}
         </div>
       </main>
     </div>
