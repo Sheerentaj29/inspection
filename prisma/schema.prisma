@@ -1,0 +1,168 @@
+// Equipment Master Management - Industrial Inspection Report Automation System
+// Prisma schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================
+// AUTH & USERS
+// =====================================================
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("INSPECTOR") // ADMIN | INSPECTOR
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  equipment   Equipment[]   @relation("EquipmentCreatedBy")
+  inspections Inspection[]
+  auditLogs   AuditLog[]
+}
+
+// =====================================================
+// CLIENTS & PLANTS
+// =====================================================
+
+model Client {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  industry     String?
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  address      String?
+  notes        String?
+  isDemo       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  plants    Plant[]
+  equipment Equipment[]
+}
+
+model Plant {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  location  String?
+  address   String?
+  notes     String?
+  isDemo    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client    Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  equipment Equipment[]
+}
+
+// =====================================================
+// EQUIPMENT MASTER
+// =====================================================
+
+model Equipment {
+  id                String   @id @default(cuid())
+  equipmentId       String   // human-readable unique ID, e.g. EQ-001
+  name              String
+  category          String   // STORAGE | PRESSURE | SEPARATION | UTILITY | PIPE | VALVE | PUMP | OTHER
+  type              String   // e.g. "Chemical Storage Tank"
+  orientation       String?  // Horizontal | Vertical | Inclined | Not Applicable
+
+  // Dimensional data — nullable because not every field applies to every type.
+  diameter          Float?   // mm
+  height            Float?   // mm
+  length            Float?   // mm
+  width             Float?   // mm
+  capacity          Float?   // m3
+  wallThickness     Float?   // mm
+  // Pipe / heat-exchanger specific
+  nominalDiameter   Float?   // mm (DN)
+  outsideDiameter   Float?   // mm (OD)
+  tubeLength        Float?   // mm (heat exchanger)
+  shellDiameter     Float?   // mm (heat exchanger)
+
+  material          String?
+  manufacturer      String?
+  serialNumber      String?
+
+  clientId          String
+  plantId           String
+  tagNumber         String?
+  dimensionSource   String?  // Approved Engineering Drawing | Manufacturer Drawing | Nameplate | Field Measurement
+  verificationStatus String   @default("Unverified") // Verified | Unverified
+
+  isDemo            Boolean  @default(false)
+  notes             String?
+
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  client     Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  plant      Plant        @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  createdBy  User         @relation("EquipmentCreatedBy", fields: [createdById], references: [id])
+  inspections Inspection[]
+
+  @@unique([clientId, equipmentId])
+  @@index([clientId])
+  @@index([plantId])
+  @@index([category])
+  @@index([type])
+}
+
+// =====================================================
+// INSPECTIONS
+// =====================================================
+
+model Inspection {
+  id              String   @id @default(cuid())
+  equipmentId     String
+  inspectorId     String
+  inspectionDate  DateTime
+  inspectionType  String   // Visual | UT Thickness | Penetrant | Radiography | Pressure Test | Other
+  status          String   @default("Completed") // Scheduled | In-Progress | Completed | Failed
+  summary         String?
+  observations    String?
+  // Free-form recorded measurements as JSON: [{label, value, unit, notes}]
+  measurements    String?
+  photoCount      Int      @default(0)
+  reportPath      String?
+  isDemo          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  equipment Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  inspector User      @relation(fields: [inspectorId], references: [id])
+
+  @@index([equipmentId])
+  @@index([inspectorId])
+}
+
+// =====================================================
+// AUDIT LOG
+// =====================================================
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  userName  String?
+  action    String   // CREATE | UPDATE | DELETE | LOGIN | EXPORT | IMPORT
+  entity    String   // Equipment | Client | Plant | Inspection | User
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entity])
+  @@index([userId])
+}
