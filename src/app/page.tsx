@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/lib/store";
-import { apiFetch, registerUnauthorizedHandler } from "@/lib/api-client";
+import {
+  apiFetch,
+  registerUnauthorizedHandler,
+  setSessionToken,
+  clearSessionToken,
+  getSessionToken,
+} from "@/lib/api-client";
 import { LoginScreen } from "@/components/login-screen";
 import { AppSidebar } from "@/components/layout/sidebar";
 import { DashboardView } from "@/components/views/dashboard-view";
@@ -47,6 +53,9 @@ export default function Home() {
       setUser(null);
       setView("dashboard");
       setSessionExpired(true);
+      // Also clear the localStorage token so the next boot check doesn't
+      // try to use a stale one.
+      clearSessionToken();
       // Also call DELETE /api/auth to clear the cookie server-side,
       // so the next login attempt starts fresh.
       void fetch("/api/auth", { method: "DELETE", credentials: "include" })
@@ -58,11 +67,19 @@ export default function Home() {
     return unregister;
   }, [setUser, setView]);
 
-  // Re-hydrate session on first render
+  // Re-hydrate session on first render. The apiFetch helper automatically
+  // includes the Authorization: Bearer <userId> header from localStorage
+  // as a fallback for browsers that aren't sending the session cookie
+  // (e.g. cross-origin on the HTTPS preview URL).
   useEffect(() => {
     apiFetch<{ user: SessionUser | null }>("/api/auth")
       .then((r) => {
-        if (r.user) setUser(r.user);
+        if (r.user) {
+          setUser(r.user);
+          // Refresh the localStorage token with the current user id so
+          // subsequent requests keep using the fallback header.
+          setSessionToken(r.user.id);
+        }
       })
       .catch(() => {})
       .finally(() => setBootChecked(true));

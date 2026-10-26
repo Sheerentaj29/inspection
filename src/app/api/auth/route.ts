@@ -50,8 +50,8 @@ export async function POST(req: NextRequest) {
   });
 }
 
-export async function DELETE() {
-  const session = await getSession();
+export async function DELETE(req: NextRequest) {
+  const session = await getSession(req);
   const cookieStore = await cookies();
   if (session) {
     await recordAudit({
@@ -66,8 +66,10 @@ export async function DELETE() {
   return NextResponse.json({ ok: true });
 }
 
-export async function GET() {
-  const session = await getSession();
+export async function GET(req: NextRequest) {
+  // Pass `req` so getSession can fall back to the Authorization: Bearer
+  // header when the cookie isn't being sent (cross-origin preview URL).
+  const session = await getSession(req);
   if (!session) return NextResponse.json({ user: null });
   return NextResponse.json({ user: session });
 }

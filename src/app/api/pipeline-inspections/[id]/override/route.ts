@@ -9,7 +9,7 @@ import { getSession } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const session = await getSession();
+  const session = await getSession(req);
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -8,11 +8,11 @@
 // Storing just the id keeps the cookie value tiny (a single cuid string,
 // ~25 chars) and avoids any browser/proxy issues with JSON special chars.
 //
-// IMPORTANT: cookie name is `ira_session_v2`. The previous build used
-// `ems_session` with a URL-encoded JSON value — some browsers retain that
-// stale cookie and it interferes with the new clean user-id value. Renaming
-// the cookie sidesteps the conflict: the old `ems_session` cookie is simply
-// ignored by the new code (and gets cleared on the next successful login).
+// FALLBACK: if the cookie isn't being sent (which happens on the preview URL
+// in some browsers due to cross-origin cookie restrictions), the client
+// also sends the same user id via an `Authorization: Bearer <userId>` header.
+// getSession() checks the cookie first, then the Authorization header, so
+// authentication works even when cookies are completely broken.
 
 import { cookies } from "next/headers";
 import { db } from "@/lib/db";
@@ -36,20 +36,17 @@ const SESSION_COOKIE = "ira_session_v2";
 const LEGACY_COOKIE = "ems_session";
 const COOKIE_MAX_AGE = 60 * 60 * 8; // 8 hours
 
-export async function getSession(): Promise<SessionUser | null> {
-  const cookieStore = await cookies();
-  const raw = cookieStore.get(SESSION_COOKIE)?.value;
-  if (!raw || raw.length === 0) return null;
-  // Reject obviously-stale cookies from older builds (URL-encoded JSON).
-  // Those values start with "%7B" (URL-encoded "{") or "{" — never accept
-  // them as a user id, otherwise the DB lookup fails and we return null.
-  if (raw.startsWith("%7B") || raw.startsWith("{")) return null;
-  // CUIDs are 24+ chars, alphanumeric. Reject anything that doesn't look
-  // like a valid cuid to avoid hitting the DB with junk.
-  if (!/^[a-z0-9]{20,30}$/i.test(raw)) return null;
+function isValidUserIdShape(raw: string): boolean {
+  // CUIDs are 20-30 chars, alphanumeric. Reject anything that doesn't
+  // look like a valid cuid to avoid hitting the DB with junk.
+  return /^[a-z0-9]{20,30}$/i.test(raw);
+}
+
+async function lookupUser(userId: string): Promise<SessionUser | null> {
+  if (!isValidUserIdShape(userId)) return null;
   try {
     const user = await db.user.findUnique({
-      where: { id: raw },
+      where: { id: userId },
       select: { id: true, email: true, name: true, role: true, active: true },
     });
     if (!user || !user.active) return null;
@@ -64,22 +61,54 @@ export async function getSession(): Promise<SessionUser | null> {
   }
 }
 
-export async function getCurrentUser(): Promise<User | null> {
-  const session = await getSession();
+/**
+ * Read the session. Checks the cookie first, then falls back to the
+ * Authorization: Bearer <userId> header (used when cookies are broken
+ * in the user's browser, e.g. cross-origin on the preview URL).
+ */
+export async function getSession(req?: NextRequest): Promise<SessionUser | null> {
+  // 1. Try the cookie first (preferred path).
+  const cookieStore = await cookies();
+  const rawCookie = cookieStore.get(SESSION_COOKIE)?.value;
+  if (rawCookie && rawCookie.length > 0) {
+    // Reject obviously-stale cookies from older builds (URL-encoded JSON).
+    if (!rawCookie.startsWith("%7B") && !rawCookie.startsWith("{")) {
+      const user = await lookupUser(rawCookie);
+      if (user) return user;
+    }
+  }
+
+  // 2. Fall back to Authorization: Bearer <userId> header. This is the
+  //    backup path for browsers that aren't accepting/sending the cookie
+  //    (e.g. cross-origin on the preview URL, strict privacy mode, etc.).
+  if (req) {
+    const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization");
+    if (authHeader && authHeader.toLowerCase().startsWith("bearer ")) {
+      const token = authHeader.slice(7).trim();
+      const user = await lookupUser(token);
+      if (user) return user;
+    }
+  }
+
+  return null;
+}
+
+export async function getCurrentUser(req?: NextRequest): Promise<User | null> {
+  const session = await getSession(req);
   if (!session) return null;
   return db.user.findUnique({ where: { id: session.id } });
 }
 
-export async function requireSession(): Promise<SessionUser> {
-  const s = await getSession();
+export async function requireSession(req?: NextRequest): Promise<SessionUser> {
+  const s = await getSession(req);
   if (!s) {
     throw new Error("Unauthorized");
   }
   return s;
 }
 
-export async function requireAdmin(): Promise<SessionUser> {
-  const s = await requireSession();
+export async function requireAdmin(req?: NextRequest): Promise<SessionUser> {
+  const s = await requireSession(req);
   if (s.role !== "ADMIN") {
     throw new Error("Forbidden — administrator role required");
   }
@@ -89,21 +118,13 @@ export async function requireAdmin(): Promise<SessionUser> {
 type CookieStore = Awaited<ReturnType<typeof cookies>>;
 
 export function setSessionCookie(cookieStore: CookieStore, userId: string) {
-  // Set the new clean cookie with just the user id. No Secure flag —
-  // SameSite=Lax is accepted by browsers on both HTTP (localhost) and
-  // HTTPS (preview URL) without needing Secure. Adding Secure would
-  // cause the cookie to be rejected on HTTP.
   cookieStore.set(SESSION_COOKIE, userId, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
     maxAge: COOKIE_MAX_AGE,
   });
-  // Also clear any stale legacy cookie so it stops being sent. This is
-  // important: if the user's browser has both `ira_session_v2` (new) and
-  // `ems_session` (old URL-encoded JSON) cookies, both are sent on each
-  // request but the server only reads `ira_session_v2` — so the legacy
-  // cookie just adds request bloat. Clearing it keeps things clean.
+  // Also clear any stale legacy cookie so it stops being sent.
   try {
     cookieStore.delete(LEGACY_COOKIE);
   } catch {

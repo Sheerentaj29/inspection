@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAppStore } from "@/lib/store";
+import { setSessionToken } from "@/lib/api-client";
 
 interface LoginScreenProps {
   /** When true, show a "Your session has expired" banner above the form. */
@@ -41,11 +42,16 @@ export function LoginScreen({ sessionExpired = false, onDismissExpired }: LoginS
         throw new Error(body?.error ?? "Login failed");
       }
       const user = await res.json();
+      // Store the user id in localStorage so the apiFetch helper can send
+      // it as an Authorization: Bearer header on subsequent requests. This
+      // is the fallback path for browsers that aren't accepting/sending
+      // the session cookie (e.g. cross-origin on the HTTPS preview URL).
+      setSessionToken(user.id);
       // Trust the POST response. The server has already validated the
       // password and set the session cookie. We transition to the
       // dashboard immediately; if the cookie isn't accepted by the
-      // browser for some reason, the next page will show a "Failed to
-      // load" message rather than blocking at the login screen.
+      // browser for some reason, the Authorization header fallback will
+      // keep authentication working.
       setUser(user);
       setView("dashboard");
     } catch (e) {
