@@ -171,7 +171,6 @@ export function EquipmentDetailView() {
   const [inspOpen, setInspOpen] = useState(false);
   const [inspForm, setInspForm] = useState<InspectionFormState>(EMPTY_INSP);
   const [savingInsp, setSavingInsp] = useState(false);
-  const [expandedInspId, setExpandedInspId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!selectedEquipmentId) return;
@@ -669,7 +668,6 @@ export function EquipmentDetailView() {
           ) : (
             <div className="divide-y">
               {eq.inspections.map((insp) => {
-                const expanded = expandedInspId === insp.id;
                 let measurements: Measurement[] = [];
                 try {
                   measurements = insp.measurements ? JSON.parse(insp.measurements) : [];
@@ -678,43 +676,38 @@ export function EquipmentDetailView() {
                 }
                 return (
                   <div key={insp.id} className="py-3">
-                    <button
-                      className="w-full text-left"
-                      onClick={() => setExpandedInsId(expanded ? null : insp.id)}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{insp.inspectionType}</span>
-                            <Badge variant="outline" className="text-xs">{insp.status}</Badge>
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{insp.inspectionType}</span>
+                          <Badge variant="outline" className="text-xs">{insp.status}</Badge>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(insp.inspectionDate).toLocaleDateString()}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <UserIcon className="h-3 w-3" />
+                            {insp.inspector.name}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Camera className="h-3 w-3" />
+                            {insp.photoCount} photos
+                          </span>
+                          {insp.reportPath && (
                             <span className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              {new Date(insp.inspectionDate).toLocaleDateString()}
+                              <FileText className="h-3 w-3" />
+                              {insp.reportPath}
                             </span>
-                            <span className="flex items-center gap-1">
-                              <UserIcon className="h-3 w-3" />
-                              {insp.inspector.name}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Camera className="h-3 w-3" />
-                              {insp.photoCount} photos
-                            </span>
-                            {insp.reportPath && (
-                              <span className="flex items-center gap-1">
-                                <FileText className="h-3 w-3" />
-                                {insp.reportPath}
-                              </span>
-                            )}
-                          </div>
+                          )}
                         </div>
                       </div>
-                      {insp.summary && (
-                        <p className="mt-1 text-sm">{insp.summary}</p>
-                      )}
-                    </button>
-                    {expanded && (
+                    </div>
+                    {insp.summary && (
+                      <p className="mt-1 text-sm">{insp.summary}</p>
+                    )}
+                    {(insp.observations || measurements.length > 0) && (
                       <div className="mt-2 space-y-3 rounded-md border bg-muted/30 p-3 text-sm">
                         {insp.observations && (
                           <div>
